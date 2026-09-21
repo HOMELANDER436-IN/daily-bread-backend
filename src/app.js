@@ -62,9 +62,24 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ─── Health Check ─────────────────────────────────────────────────────────────
+// ─── Root & Health Check ──────────────────────────────────────────────────────
+app.get('/', (_req, res) => {
+  res.json({
+    success: true,
+    name: 'Daily Bread API',
+    status: 'online',
+    message: 'Backend server is running successfully.',
+    endpoints: {
+      health: '/health',
+      latestMessage: '/api/messages/latest',
+      currentPrayer: '/api/prayer/current',
+      adminDashboard: '/api/admin/dashboard',
+    },
+  });
+});
+
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', app: 'Daily Bread API' });
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
