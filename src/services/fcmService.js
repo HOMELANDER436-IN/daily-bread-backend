@@ -95,9 +95,23 @@ const sendBulk = async (tokens, title, body, data = {}) => {
 
       // Log and clean up failed tokens
       if (batchResponse.failureCount > 0) {
-        batchResponse.responses.forEach((resp, idx) => {
+        const { getDb } = require('../config/firebase');
+        const db = getDb();
+        batchResponse.responses.forEach(async (resp, idx) => {
           if (!resp.success) {
-            logger.warn(`FCM token failed: ${resp.error?.code} — ${batch[idx].slice(0, 20)}...`);
+            const failedToken = batch[idx];
+            logger.warn(`FCM token failed (${resp.error?.code}): ${failedToken.slice(0, 20)}...`);
+            if (db && resp.error?.code && (
+              resp.error.code === 'messaging/registration-token-not-registered' ||
+              resp.error.code === 'messaging/invalid-registration-token'
+            )) {
+              try {
+                const snap = await db.collection('device_tokens').where('fcm_token', '==', failedToken).get();
+                snap.forEach(d => d.ref.update({ is_active: false }));
+              } catch (cleanErr) {
+                logger.warn(`Failed to deactivate stale token: ${cleanErr.message}`);
+              }
+            }
           }
         });
       }

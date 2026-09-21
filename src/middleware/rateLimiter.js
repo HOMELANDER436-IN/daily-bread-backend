@@ -12,12 +12,6 @@ const createLimiter = (windowMs, max, message) =>
     skip: (req) => process.env.NODE_ENV === 'test',
   });
 
-// Strict limiter for authentication endpoints
-const authLimiter = createLimiter(
-  15 * 60 * 1000, // 15 minutes
-  10,
-  'Too many login attempts. Please try again in 15 minutes.'
-);
 
 // General API rate limit
 const generalLimiter = createLimiter(
@@ -40,4 +34,4 @@ const counsellingLimiter = createLimiter(
   'Too many counselling submissions. Please try again later.'
 );
 
-module.exports = { authLimiter, generalLimiter, reactionLimiter, counsellingLimiter };
+module.exports = { generalLimiter, reactionLimiter, counsellingLimiter };

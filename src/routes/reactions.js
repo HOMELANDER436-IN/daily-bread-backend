@@ -17,8 +17,12 @@ router.get(
 router.post(
   '/:id/reaction',
   reactionLimiter,
+  (req, res, next) => {
+    if (!req.body.device_id && req.body.deviceId) req.body.device_id = req.body.deviceId;
+    next();
+  },
   [
-    body('device_id').notEmpty().isString().trim().withMessage('device_id required'),
+    body('device_id').notEmpty().isString().trim().withMessage('deviceId or device_id is required'),
     body('reaction').isIn(['like', 'dislike']).withMessage('reaction must be "like" or "dislike"'),
   ],
   validate,

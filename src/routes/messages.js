@@ -7,7 +7,6 @@ const {
   getLatest, getPublished,
   adminGetAll, adminGetOne, create, update, deleteMessage, togglePublish,
 } = require('../controllers/messagesController');
-const auth = require('../middleware/auth');
 const validate = require('../middleware/validate');
 
 const messageBodyValidators = [
@@ -22,17 +21,22 @@ const messageBodyValidators = [
 router.get('/latest', getLatest);
 router.get('/', getPublished);
 
-// Admin routes
-router.get('/admin', auth, adminGetAll);
-router.get('/admin/:id', auth, adminGetOne);
-router.post('/admin', auth, messageBodyValidators, validate, create);
-router.put('/admin/:id', auth, messageBodyValidators, validate, update);
-router.delete('/admin/:id', auth, deleteMessage);
+// Admin routes (no auth required)
+router.get('/admin', adminGetAll);
+router.get('/admin/:id', adminGetOne);
+router.post('/admin', messageBodyValidators, validate, create);
+router.put('/admin/:id', messageBodyValidators, validate, update);
+router.delete('/admin/:id', deleteMessage);
 router.patch(
   '/admin/:id/publish',
-  auth,
-  [body('is_published').isBoolean().withMessage('is_published must be boolean')],
+  [body().custom(b => b.is_published !== undefined || b.isPublished !== undefined).withMessage('is_published or isPublished must be boolean')],
   validate,
+  (req, res, next) => {
+    if (req.body.is_published === undefined && req.body.isPublished !== undefined) {
+      req.body.is_published = req.body.isPublished;
+    }
+    next();
+  },
   togglePublish
 );
 

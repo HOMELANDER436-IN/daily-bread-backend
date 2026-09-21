@@ -31,16 +31,26 @@ const checkAndSendPrayerNotification = async () => {
   if (!db) return;
 
   try {
-    // 1. Fetch prayer settings
-    const settingsDoc = await db.doc('prayer_settings/main').get();
+    // 1. Fetch prayer settings (check current, then main)
+    let settingsDoc = await db.doc('prayer_settings/current').get();
+    if (!settingsDoc.exists) {
+      settingsDoc = await db.doc('prayer_settings/main').get();
+    }
     if (!settingsDoc.exists) return;
 
     const settings = settingsDoc.data();
     if (!settings.enabled) return;
 
-    // 2. Check current time
+    // 2. Check current time in Asia/Kolkata
+    const targetTime = settings.prayer_time || (
+      settings.hour !== undefined && settings.minute !== undefined
+        ? `${String(settings.hour).padStart(2, '0')}:${String(settings.minute).padStart(2, '0')}`
+        : null
+    );
+    if (!targetTime) return;
+
     const { hhmm, dateStr, now } = getKolkataNow();
-    if (hhmm !== settings.prayer_time) return;
+    if (hhmm !== targetTime) return;
 
     console.info(`[Prayer Scheduler] Time match: ${hhmm} — checking idempotency for ${dateStr}`);
 
@@ -53,16 +63,23 @@ const checkAndSendPrayerNotification = async () => {
       return;
     }
 
-    // 4. Create the prayer event
+    // 4. Create the 2-hour prayer event
     const scheduledAt = admin.firestore.Timestamp.fromDate(now);
     const expiresAt   = admin.firestore.Timestamp.fromDate(new Date(now.getTime() + 2 * 60 * 60 * 1000));
 
     await eventRef.set({
-      scheduled_at: scheduledAt,
-      expires_at:   expiresAt,
-      message:      PRAYER_MESSAGES.en.body,
-      event_date:   dateStr,
-      created_at:   scheduledAt,
+      date:          dateStr,
+      event_date:    dateStr,
+      scheduledTime: hhmm,
+      scheduled_time:hhmm,
+      scheduledAt:   scheduledAt,
+      scheduled_at:  scheduledAt,
+      sentAt:        scheduledAt,
+      sent_at:       scheduledAt,
+      expiresAt:     expiresAt,
+      expires_at:    expiresAt,
+      message:       PRAYER_MESSAGES.en.body,
+      created_at:    scheduledAt,
     });
 
     console.info(`[Prayer Scheduler] Event created for ${dateStr}`);

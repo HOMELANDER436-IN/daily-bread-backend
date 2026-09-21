@@ -8,7 +8,7 @@ const cors = require('cors');
 const { generalLimiter } = require('./middleware/rateLimiter');
 
 // Route modules
-const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
 const messagesRoutes = require('./routes/messages');
 const reactionsRoutes = require('./routes/reactions');
 const counsellingRoutes = require('./routes/counselling');
@@ -64,11 +64,14 @@ app.use((req, _res, next) => {
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', app: 'Daily Bread API', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok' });
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
+// Admin APIs (no login/token required)
+app.use('/api/admin', adminRoutes);
+
+// Public & Sub-resource APIs
 app.use('/api/messages', messagesRoutes);
 app.use('/api/messages', reactionsRoutes);   // reactions share /api/messages/:id prefix
 app.use('/api/counselling', counsellingRoutes);
