@@ -7,6 +7,13 @@ const { ok, fail, serverError } = require('../utils/response');
 const COLLECTION = 'counselling_requests';
 const PAGE_SIZE  = 20;
 
+const getDocMillis = (doc) => {
+  const data = doc.data();
+  if (data.created_at?.toMillis) return data.created_at.toMillis();
+  if (data.created_at?.seconds) return data.created_at.seconds * 1000;
+  return new Date(data.created_at || 0).getTime();
+};
+
 // ─── Public: Submit ───────────────────────────────────────────
 const submit = async (req, res) => {
   const db = getDb();
@@ -37,27 +44,41 @@ const adminList = async (req, res) => {
   if (!db) return serverError(res, 'Database not initialized');
 
   const filter = req.query.filter || 'all'; // 'all' | 'unread' | 'viewed'
-  const page   = Math.max(parseInt(req.query.page) || 1, 1);
-  const limit  = Math.min(parseInt(req.query.limit) || PAGE_SIZE, 100);
+  const page   = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit  = Math.min(parseInt(req.query.limit, 10) || PAGE_SIZE, 100);
 
   try {
-    let query = db.collection(COLLECTION).orderBy('created_at', 'desc');
+    try {
+      let query = db.collection(COLLECTION).orderBy('created_at', 'desc');
 
-    if (filter === 'unread') query = query.where('is_viewed', '==', false);
-    if (filter === 'viewed')  query = query.where('is_viewed', '==', true);
+      if (filter === 'unread') query = query.where('is_viewed', '==', false);
+      if (filter === 'viewed')  query = query.where('is_viewed', '==', true);
 
-    // Get total count (Firestore doesn't support COUNT natively in free tier,
-    // so we fetch IDs only for count then paginate)
-    const countSnap = await query.select().get();
-    const total = countSnap.size;
+      const countSnap = await query.select().get();
+      const total = countSnap.size;
 
-    // Apply pagination via offset (simple for small datasets)
-    const offset = (page - 1) * limit;
-    const pageSnap = await query.limit(limit).offset(offset).get();
+      const offset = (page - 1) * limit;
+      const pageSnap = await query.limit(limit).offset(offset).get();
+      const requests = pageSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    const requests = pageSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      return ok(res, { requests, total, page, limit });
+    } catch (queryErr) {
+      if (queryErr.message && queryErr.message.includes('requires an index')) {
+        const snap = await db.collection(COLLECTION).get();
+        let docs = snap.docs;
+        if (filter === 'unread') docs = docs.filter(d => !d.data().is_viewed);
+        if (filter === 'viewed')  docs = docs.filter(d => d.data().is_viewed);
 
-    return ok(res, { requests, total, page, limit });
+        docs.sort((a, b) => getDocMillis(b) - getDocMillis(a));
+        const total = docs.length;
+        const offset = (page - 1) * limit;
+        const paginatedDocs = docs.slice(offset, offset + limit);
+        const requests = paginatedDocs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        return ok(res, { requests, total, page, limit });
+      }
+      throw queryErr;
+    }
   } catch (err) {
     return serverError(res, err.message);
   }
@@ -69,15 +90,17 @@ const adminCounts = async (_req, res) => {
   if (!db) return serverError(res, 'Database not initialized');
 
   try {
-    const [totalSnap, unreadSnap] = await Promise.all([
-      db.collection(COLLECTION).select().get(),
-      db.collection(COLLECTION).where('is_viewed', '==', false).select().get(),
-    ]);
+    const snap = await db.collection(COLLECTION).get();
+    const total = snap.size;
+    let unread = 0;
+    snap.forEach(doc => {
+      if (!doc.data().is_viewed) unread++;
+    });
 
     return ok(res, {
-      total:  totalSnap.size,
-      unread: unreadSnap.size,
-      viewed: totalSnap.size - unreadSnap.size,
+      total,
+      unread,
+      viewed: total - unread,
     });
   } catch (err) {
     return serverError(res, err.message);

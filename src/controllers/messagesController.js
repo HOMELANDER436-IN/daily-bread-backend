@@ -9,12 +9,12 @@ const COLLECTION = 'messages';
 // ─── Helpers ──────────────────────────────────────────────────
 const docToMessage = (doc) => ({ id: doc.id, ...doc.data() });
 
-const latestPublishedQuery = (db) =>
-  db.collection(COLLECTION)
-    .where('is_published', '==', true)
-    .where('deleted_at', '==', null)
-    .orderBy('created_at', 'desc')
-    .limit(1);
+const getDocMillis = (doc) => {
+  const data = doc.data();
+  if (data.created_at?.toMillis) return data.created_at.toMillis();
+  if (data.created_at?.seconds) return data.created_at.seconds * 1000;
+  return new Date(data.created_at || 0).getTime();
+};
 
 // ─── Public: Latest Published ─────────────────────────────────
 const getLatest = async (_req, res) => {
@@ -22,9 +22,32 @@ const getLatest = async (_req, res) => {
   if (!db) return serverError(res, 'Database not initialized');
 
   try {
-    const snap = await latestPublishedQuery(db).get();
-    if (snap.empty) return ok(res, null);
-    return ok(res, docToMessage(snap.docs[0]));
+    try {
+      const snap = await db.collection(COLLECTION)
+        .where('is_published', '==', true)
+        .where('deleted_at', '==', null)
+        .orderBy('created_at', 'desc')
+        .limit(1)
+        .get();
+
+      if (snap.empty) return ok(res, null);
+      return ok(res, docToMessage(snap.docs[0]));
+    } catch (queryErr) {
+      // Fallback if composite index is not yet built in Firestore
+      if (queryErr.message && queryErr.message.includes('requires an index')) {
+        const snap = await db.collection(COLLECTION)
+          .where('is_published', '==', true)
+          .get();
+
+        const activeDocs = snap.docs
+          .filter(d => !d.data().deleted_at)
+          .sort((a, b) => getDocMillis(b) - getDocMillis(a));
+
+        if (activeDocs.length === 0) return ok(res, null);
+        return ok(res, docToMessage(activeDocs[0]));
+      }
+      throw queryErr;
+    }
   } catch (err) {
     return serverError(res, err.message);
   }
@@ -35,25 +58,42 @@ const getPublished = async (req, res) => {
   const db    = getDb();
   if (!db) return serverError(res, 'Database not initialized');
 
-  const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+  const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
 
   try {
-    let query = db.collection(COLLECTION)
-      .where('is_published', '==', true)
-      .where('deleted_at', '==', null)
-      .orderBy('created_at', 'desc')
-      .limit(limit);
+    try {
+      let query = db.collection(COLLECTION)
+        .where('is_published', '==', true)
+        .where('deleted_at', '==', null)
+        .orderBy('created_at', 'desc')
+        .limit(limit);
 
-    if (req.query.cursor) {
-      const cursorDoc = await db.collection(COLLECTION).doc(req.query.cursor).get();
-      if (cursorDoc.exists) query = query.startAfter(cursorDoc);
+      if (req.query.cursor) {
+        const cursorDoc = await db.collection(COLLECTION).doc(req.query.cursor).get();
+        if (cursorDoc.exists) query = query.startAfter(cursorDoc);
+      }
+
+      const snap = await query.get();
+      const messages = snap.docs.map(docToMessage);
+      const nextCursor = messages.length === limit ? messages[messages.length - 1].id : null;
+
+      return ok(res, { messages, nextCursor });
+    } catch (queryErr) {
+      if (queryErr.message && queryErr.message.includes('requires an index')) {
+        const snap = await db.collection(COLLECTION)
+          .where('is_published', '==', true)
+          .get();
+
+        const messages = snap.docs
+          .filter(d => !d.data().deleted_at)
+          .sort((a, b) => getDocMillis(b) - getDocMillis(a))
+          .slice(0, limit)
+          .map(docToMessage);
+
+        return ok(res, { messages, nextCursor: null });
+      }
+      throw queryErr;
     }
-
-    const snap = await query.get();
-    const messages = snap.docs.map(docToMessage);
-    const nextCursor = messages.length === limit ? messages[messages.length - 1].id : null;
-
-    return ok(res, { messages, nextCursor });
   } catch (err) {
     return serverError(res, err.message);
   }
@@ -65,12 +105,24 @@ const adminGetAll = async (_req, res) => {
   if (!db) return serverError(res, 'Database not initialized');
 
   try {
-    const snap = await db.collection(COLLECTION)
-      .where('deleted_at', '==', null)
-      .orderBy('created_at', 'desc')
-      .get();
+    try {
+      const snap = await db.collection(COLLECTION)
+        .where('deleted_at', '==', null)
+        .orderBy('created_at', 'desc')
+        .get();
 
-    return ok(res, snap.docs.map(docToMessage));
+      return ok(res, snap.docs.map(docToMessage));
+    } catch (queryErr) {
+      if (queryErr.message && queryErr.message.includes('requires an index')) {
+        const snap = await db.collection(COLLECTION).get();
+        const docs = snap.docs
+          .filter(d => !d.data().deleted_at)
+          .sort((a, b) => getDocMillis(b) - getDocMillis(a));
+
+        return ok(res, docs.map(docToMessage));
+      }
+      throw queryErr;
+    }
   } catch (err) {
     return serverError(res, err.message);
   }
