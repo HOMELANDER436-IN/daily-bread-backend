@@ -11,6 +11,7 @@ const {
   create,
   update,
   deleteMessage,
+  deleteAll: deleteAllMessages,
   togglePublish,
 } = require('../controllers/messagesController');
 
@@ -19,6 +20,8 @@ const {
   adminCounts,
   adminGetOne: adminGetOneCounselling,
   markViewed,
+  deleteOne: deleteCounsellingOne,
+  deleteAll: deleteAllCounselling,
 } = require('../controllers/counsellingController');
 
 const {
@@ -31,7 +34,6 @@ const messageBodyValidators = [
   body('content').notEmpty().trim().isLength({ max: 10000 }).withMessage('Content is required and must be under 10,000 characters'),
   body('title').optional({ nullable: true }).trim().isLength({ max: 200 }),
   body('reference').optional({ nullable: true }).trim().isLength({ max: 200 }),
-  body('image_url').optional({ nullable: true }).trim(),
   body('language').optional().isIn(['en', 'ml']).withMessage('Language must be "en" or "ml"'),
 ];
 
@@ -39,6 +41,8 @@ router.get('/messages', adminGetAll);
 router.get('/messages/:id', adminGetOne);
 router.post('/messages', messageBodyValidators, validate, create);
 router.put('/messages/:id', messageBodyValidators, validate, update);
+// NOTE: /messages/all MUST be before /messages/:id
+router.delete('/messages/all', deleteAllMessages);
 router.delete('/messages/:id', deleteMessage);
 router.patch(
   '/messages/:id/publish',
@@ -55,11 +59,13 @@ router.patch(
   togglePublish
 );
 
-// ─── Counselling Admin APIs ───────────────────────────────────
+// NOTE: /counselling/all and /counselling/counts MUST be before /counselling/:id
 router.get('/counselling', adminList);
 router.get('/counselling/counts', adminCounts);
+router.delete('/counselling/all', deleteAllCounselling);
 router.get('/counselling/:id', adminGetOneCounselling);
 router.patch('/counselling/:id/viewed', markViewed);
+router.delete('/counselling/:id', deleteCounsellingOne);
 
 // ─── Prayer Settings Admin APIs ───────────────────────────────
 router.get('/prayer-settings', getSettings);

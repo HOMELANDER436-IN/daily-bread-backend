@@ -24,12 +24,18 @@ const sendToToken = async (token, title, body, data = {}) => {
           body,
           icon: '/assets/icon-192.png',
           badge: '/assets/badge-72.png',
+          // Note: FCM Web Push does not support custom notification sounds—
+          // the browser/OS decides the sound. Custom sounds require a native app.
         },
         fcmOptions: { link: '/' },
       },
       android: {
         priority: 'high',
-        notification: { channelId: 'prayer_channel' },
+        notification: {
+          channelId: 'prayer_channel',
+          // 'church_bell' must be bundled in the Android app as res/raw/church_bell.mp3
+          sound: 'church_bell',
+        },
       },
     };
 
@@ -77,7 +83,10 @@ const sendBulk = async (tokens, title, body, data = {}) => {
       },
       android: {
         priority: 'high',
-        notification: { channelId: 'prayer_channel' },
+        notification: {
+          channelId: 'prayer_channel',
+          sound: 'church_bell',
+        },
       },
     }));
 
@@ -106,7 +115,9 @@ const sendBulk = async (tokens, title, body, data = {}) => {
               resp.error.code === 'messaging/invalid-registration-token'
             )) {
               try {
-                const snap = await db.collection('device_tokens').where('fcm_token', '==', failedToken).get();
+                // Check both field names (spec: 'token', legacy: 'fcm_token')
+                let snap = await db.collection('device_tokens').where('token', '==', failedToken).get();
+                if (snap.empty) snap = await db.collection('device_tokens').where('fcm_token', '==', failedToken).get();
                 snap.forEach(d => d.ref.update({ is_active: false }));
               } catch (cleanErr) {
                 logger.warn(`Failed to deactivate stale token: ${cleanErr.message}`);

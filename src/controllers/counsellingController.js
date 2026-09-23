@@ -143,4 +143,48 @@ const markViewed = async (req, res) => {
   }
 };
 
-module.exports = { submit, adminList, adminCounts, adminGetOne, markViewed };
+// ─── Admin: Delete One ────────────────────────────────────────
+const deleteOne = async (req, res) => {
+  const db = getDb();
+  if (!db) return serverError(res, 'Database not initialized');
+
+  try {
+    const ref = db.collection(COLLECTION).doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return fail(res, 'Request not found', 404);
+
+    await ref.delete();
+    return ok(res, null, 'Request deleted');
+  } catch (err) {
+    return serverError(res, err.message);
+  }
+};
+
+// ─── Admin: Delete All ────────────────────────────────────────
+const deleteAll = async (_req, res) => {
+  const db = getDb();
+  if (!db) return serverError(res, 'Database not initialized');
+
+  try {
+    const snap = await db.collection(COLLECTION).get();
+    if (snap.empty) return ok(res, { deleted: 0 }, 'No requests to delete');
+
+    const BATCH_SIZE = 400;
+    let deleted = 0;
+
+    for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+      const batch = db.batch();
+      snap.docs.slice(i, i + BATCH_SIZE).forEach(doc => {
+        batch.delete(doc.ref);
+        deleted++;
+      });
+      await batch.commit();
+    }
+
+    return ok(res, { deleted }, `${deleted} request(s) deleted`);
+  } catch (err) {
+    return serverError(res, err.message);
+  }
+};
+
+module.exports = { submit, adminList, adminCounts, adminGetOne, markViewed, deleteOne, deleteAll };

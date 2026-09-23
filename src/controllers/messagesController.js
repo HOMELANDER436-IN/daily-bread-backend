@@ -147,7 +147,7 @@ const create = async (req, res) => {
   const db = getDb();
   if (!db) return serverError(res, 'Database not initialized');
 
-  const { title, content, reference, image_url, language, is_published } = req.body;
+  const { title, content, reference, language, is_published } = req.body;
   const now = admin.firestore.Timestamp.now();
 
   try {
@@ -155,7 +155,6 @@ const create = async (req, res) => {
       title:        title || null,
       content,
       reference:    reference || null,
-      image_url:    image_url || null,
       language:     language || 'en',
       is_published: is_published || false,
       deleted_at:   null,
@@ -175,7 +174,7 @@ const update = async (req, res) => {
   const db = getDb();
   if (!db) return serverError(res, 'Database not initialized');
 
-  const { title, content, reference, image_url, language, is_published } = req.body;
+  const { title, content, reference, language, is_published } = req.body;
 
   try {
     const ref = db.collection(COLLECTION).doc(req.params.id);
@@ -186,7 +185,6 @@ const update = async (req, res) => {
       title:        title !== undefined ? (title || null) : doc.data().title,
       content:      content || doc.data().content,
       reference:    reference !== undefined ? (reference || null) : doc.data().reference,
-      image_url:    image_url !== undefined ? (image_url || null) : doc.data().image_url,
       language:     language || doc.data().language,
       is_published: is_published !== undefined ? is_published : doc.data().is_published,
       updated_at:   admin.firestore.Timestamp.now(),
@@ -246,4 +244,38 @@ const togglePublish = async (req, res) => {
   }
 };
 
-module.exports = { getLatest, getPublished, adminGetAll, adminGetOne, create, update, deleteMessage, togglePublish };
+// ─── Admin: Delete All Messages ───────────────────────────────
+const deleteAll = async (_req, res) => {
+  const db = getDb();
+  if (!db) return serverError(res, 'Database not initialized');
+
+  try {
+    const snap = await db.collection(COLLECTION).get();
+    if (snap.empty) return ok(res, { deleted: 0 }, 'No messages to delete');
+
+    const BATCH_SIZE = 400;
+    let deleted = 0;
+
+    // Delete in batches
+    for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+      const batch = db.batch();
+      const chunk = snap.docs.slice(i, i + BATCH_SIZE);
+
+      for (const doc of chunk) {
+        // Delete reactions subcollection first
+        const reactionsSnap = await doc.ref.collection('reactions').get();
+        reactionsSnap.forEach(r => batch.delete(r.ref));
+        batch.delete(doc.ref);
+        deleted++;
+      }
+
+      await batch.commit();
+    }
+
+    return ok(res, { deleted }, `${deleted} message(s) deleted`);
+  } catch (err) {
+    return serverError(res, err.message);
+  }
+};
+
+module.exports = { getLatest, getPublished, adminGetAll, adminGetOne, create, update, deleteMessage, deleteAll, togglePublish };

@@ -13,7 +13,6 @@ const messageBodyValidators = [
   body('content').notEmpty().trim().isLength({ max: 10000 }).withMessage('Content is required and must be under 10,000 characters'),
   body('title').optional({ nullable: true }).trim().isLength({ max: 200 }),
   body('reference').optional({ nullable: true }).trim().isLength({ max: 200 }),
-  body('image_url').optional({ nullable: true }).trim(),
   body('language').optional().isIn(['en', 'ml']).withMessage('Language must be "en" or "ml"'),
 ];
 

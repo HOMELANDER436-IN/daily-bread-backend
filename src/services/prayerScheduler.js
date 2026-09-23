@@ -8,8 +8,8 @@ const { sendBulk } = require('./fcmService');
 const TIMEZONE = 'Asia/Kolkata';
 
 const PRAYER_MESSAGES = {
-  en: { title: '🙏 Prayer Time',        body: 'Take a moment to pause, pray, and be still.' },
-  ml: { title: '🙏 പ്രാർത്ഥന സമയം', body: 'അൽപ്പസമയം മാറ്റിവെച്ച് പ്രാർത്ഥിക്കൂ.' },
+  en: { title: 'Daily Bread', body: 'It is prayer time. Take a moment to pray.' },
+  ml: { title: 'Daily Bread', body: 'ഇത് പ്രാർത്ഥന സമയമാണ്. ഒരു നിമിഷം പ്രാർത്ഥിക്കൂ.' },
 };
 
 /**
@@ -98,9 +98,12 @@ const checkAndSendPrayerNotification = async () => {
     const mlTokens = [];
 
     tokensSnap.forEach(doc => {
-      const { fcm_token, language } = doc.data();
-      if (language === 'ml') mlTokens.push(fcm_token);
-      else                    enTokens.push(fcm_token);
+      const data = doc.data();
+      // Support both 'token' (spec field) and legacy 'fcm_token'
+      const tkn = data.token || data.fcm_token;
+      if (!tkn) return;
+      if (data.language === 'ml') mlTokens.push(tkn);
+      else                        enTokens.push(tkn);
     });
 
     const notifData = { type: 'prayer', event_id: dateStr, expires_at: expiresAt.toDate().toISOString() };

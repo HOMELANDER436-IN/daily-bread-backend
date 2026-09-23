@@ -82,6 +82,14 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', app: 'Daily Bread API' });
 });
 
+// ─── No-Cache Headers for Dynamic Data ──────────────────────────────────────
+// Prevents browsers and CDN from caching live Firestore-backed responses.
+// After Admin publishes/edits/deletes, Viewer always fetches fresh data.
+app.use(['/api/messages', '/api/prayer', '/api/counselling', '/api/admin'], (_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 // ─── API Routes ───────────────────────────────────────────────────────────────
 // Admin APIs (no login/token required)
 app.use('/api/admin', adminRoutes);
