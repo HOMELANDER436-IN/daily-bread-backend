@@ -24,8 +24,7 @@ const sendToToken = async (token, title, body, data = {}) => {
           body,
           icon: '/assets/icon-192.png',
           badge: '/assets/badge-72.png',
-          // Note: FCM Web Push does not support custom notification sounds—
-          // the browser/OS decides the sound. Custom sounds require a native app.
+          sound: '/assets/church_bell.mp3',
         },
         fcmOptions: { link: '/' },
       },
@@ -33,8 +32,14 @@ const sendToToken = async (token, title, body, data = {}) => {
         priority: 'high',
         notification: {
           channelId: 'prayer_channel',
-          // 'church_bell' must be bundled in the Android app as res/raw/church_bell.mp3
           sound: 'church_bell',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'church_bell.mp3',
+          },
         },
       },
     };
@@ -78,6 +83,7 @@ const sendBulk = async (tokens, title, body, data = {}) => {
           body,
           icon: '/assets/icon-192.png',
           badge: '/assets/badge-72.png',
+          sound: '/assets/church_bell.mp3',
         },
         fcmOptions: { link: '/' },
       },
@@ -86,6 +92,13 @@ const sendBulk = async (tokens, title, body, data = {}) => {
         notification: {
           channelId: 'prayer_channel',
           sound: 'church_bell',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'church_bell.mp3',
+          },
         },
       },
     }));

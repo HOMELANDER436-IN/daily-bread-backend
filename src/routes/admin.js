@@ -27,6 +27,12 @@ const {
 const {
   getSettings,
   updateSettings,
+  listSchedules,
+  getSchedule,
+  createSchedule,
+  updateSchedule,
+  deleteSchedule,
+  toggleSchedule,
 } = require('../controllers/prayerController');
 
 // ─── Messages Admin APIs ──────────────────────────────────────
@@ -81,5 +87,31 @@ router.put(
   validate,
   updateSettings
 );
+
+// ─── Multiple Prayer Schedules Admin APIs ──────────────────────
+router.get('/prayer-schedules', listSchedules);
+router.post(
+  '/prayer-schedules',
+  [
+    body('type').isIn(['daily', 'weekly', 'once']).withMessage('type must be daily, weekly, or once'),
+    body('time').matches(/^\d{2}:\d{2}$/).withMessage('time must be HH:MM format'),
+    body('enabled').optional().isBoolean(),
+  ],
+  validate,
+  createSchedule
+);
+router.get('/prayer-schedules/:id', getSchedule);
+router.put(
+  '/prayer-schedules/:id',
+  [
+    body('type').optional().isIn(['daily', 'weekly', 'once']),
+    body('time').optional().matches(/^\d{2}:\d{2}$/),
+    body('enabled').optional().isBoolean(),
+  ],
+  validate,
+  updateSchedule
+);
+router.patch('/prayer-schedules/:id/toggle', toggleSchedule);
+router.delete('/prayer-schedules/:id', deleteSchedule);
 
 module.exports = router;
