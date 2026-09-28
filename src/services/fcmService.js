@@ -18,24 +18,34 @@ const sendToToken = async (token, title, body, data = {}) => {
       notification: { title, body },
       data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
       webpush: {
-        headers: { Urgency: 'high' },
+        headers: {
+          Urgency: 'high',
+          TTL: '120',
+        },
         notification: {
           title,
           body,
           icon: '/assets/icon-192.png',
           badge: '/assets/badge-72.png',
           sound: '/assets/church_bell.mp3',
+          tag: 'daily_bread_prayer',
         },
         fcmOptions: { link: '/' },
       },
       android: {
         priority: 'high',
+        ttl: 120 * 1000,
+        collapseKey: 'daily_bread_prayer',
         notification: {
-          channelId: 'prayer_channel',
+          channelId: 'daily_bread_prayer',
           sound: 'church_bell',
         },
       },
       apns: {
+        headers: {
+          'apns-expiration': String(Math.floor(Date.now() / 1000) + 120),
+          'apns-collapse-id': 'daily_bread_prayer',
+        },
         payload: {
           aps: {
             sound: 'church_bell.mp3',
@@ -77,24 +87,34 @@ const sendBulk = async (tokens, title, body, data = {}) => {
       notification: { title, body },
       data: dataStrings,
       webpush: {
-        headers: { Urgency: 'high' },
+        headers: {
+          Urgency: 'high',
+          TTL: '120',
+        },
         notification: {
           title,
           body,
           icon: '/assets/icon-192.png',
           badge: '/assets/badge-72.png',
           sound: '/assets/church_bell.mp3',
+          tag: 'daily_bread_prayer',
         },
         fcmOptions: { link: '/' },
       },
       android: {
         priority: 'high',
+        ttl: 120 * 1000,
+        collapseKey: 'daily_bread_prayer',
         notification: {
-          channelId: 'prayer_channel',
+          channelId: 'daily_bread_prayer',
           sound: 'church_bell',
         },
       },
       apns: {
+        headers: {
+          'apns-expiration': String(Math.floor(Date.now() / 1000) + 120),
+          'apns-collapse-id': 'daily_bread_prayer',
+        },
         payload: {
           aps: {
             sound: 'church_bell.mp3',

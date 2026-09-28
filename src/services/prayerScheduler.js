@@ -58,6 +58,7 @@ async function dispatchPrayerNotification(db, eventId, expiresAt) {
 
   const notifData = {
     type: 'prayer',
+    schedule_id: eventId.includes('_') ? eventId.split('_')[0] : eventId,
     event_id: eventId,
     expires_at: expiresAt.toDate().toISOString(),
   };
@@ -70,9 +71,17 @@ async function dispatchPrayerNotification(db, eventId, expiresAt) {
   ].filter(Boolean));
 }
 
+let isChecking = false;
+
 const checkAndSendPrayerNotification = async () => {
+  if (isChecking) return;
+  isChecking = true;
+
   const db = getDb();
-  if (!db) return;
+  if (!db) {
+    isChecking = false;
+    return;
+  }
 
   try {
     const { hhmm, dateStr, dayOfWeek, now } = getKolkataNow();
@@ -193,6 +202,8 @@ const checkAndSendPrayerNotification = async () => {
     }
   } catch (err) {
     console.error('[Prayer Scheduler] Error:', err.message);
+  } finally {
+    isChecking = false;
   }
 };
 
