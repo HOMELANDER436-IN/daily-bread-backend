@@ -3,12 +3,39 @@
 const admin  = require('firebase-admin');
 const { getDb } = require('../config/firebase');
 const { ok, fail, serverError } = require('../utils/response');
+const { sendBulk } = require('../services/fcmService');
 
 // prayer_settings stored as a document: prayer_settings/current
 // prayer_events stored with doc ID = 'yyyy-mm-dd' for idempotency
 const SETTINGS_DOC   = 'prayer_settings/current';
 const FALLBACK_DOC   = 'prayer_settings/main';
 const EVENTS_COLLECTION = 'prayer_events';
+
+/**
+ * Broadcast silent schedules_changed signal to active devices so they
+ * synchronize their local exact alarms immediately.
+ */
+const broadcastScheduleChange = async () => {
+  const db = getDb();
+  if (!db) return;
+  try {
+    const tokensSnap = await db.collection('device_tokens')
+      .where('is_active', '==', true)
+      .get();
+    if (tokensSnap.empty) return;
+    const tokens = [];
+    tokensSnap.forEach(doc => {
+      const data = doc.data();
+      const t = data.token || data.fcm_token;
+      if (t && !tokens.includes(t)) tokens.push(t);
+    });
+    if (tokens.length > 0) {
+      await sendBulk(tokens, '', '', { type: 'schedules_changed' });
+    }
+  } catch (err) {
+    console.warn(`[Prayer Controller] Broadcast schedule change failed: ${err.message}`);
+  }
+};
 
 // ─── Public: Get Current Prayer Event ────────────────────────
 // Returns an active prayer event if one exists within the 2-hour window
@@ -135,6 +162,9 @@ const updateSettings = async (req, res) => {
     // Also update fallback doc for sync
     await db.doc(FALLBACK_DOC).set(updates, { merge: true }).catch(() => null);
 
+    // Notify connected devices to synchronize local schedules
+    broadcastScheduleChange().catch(() => {});
+
     return ok(res, { id: 'current', ...updates });
   } catch (err) {
     return serverError(res, err.message);
@@ -207,6 +237,7 @@ const createSchedule = async (req, res) => {
 
     const ref = await db.collection(SCHEDULES_COLLECTION).add(payload);
     const savedDoc = await ref.get();
+    broadcastScheduleChange().catch(() => {});
     return ok(res, { id: savedDoc.id, ...savedDoc.data() }, 'Prayer schedule created', 201);
   } catch (err) {
     return serverError(res, err.message);
@@ -247,6 +278,7 @@ const updateSchedule = async (req, res) => {
 
     await ref.update(updates);
     const updated = await ref.get();
+    broadcastScheduleChange().catch(() => {});
     return ok(res, { id: updated.id, ...updated.data() }, 'Prayer schedule updated');
   } catch (err) {
     return serverError(res, err.message);
@@ -261,6 +293,7 @@ const deleteSchedule = async (req, res) => {
     const existing = await ref.get();
     if (!existing.exists) return fail(res, 'Schedule not found', 404);
     await ref.delete();
+    broadcastScheduleChange().catch(() => {});
     return ok(res, null, 'Prayer schedule deleted');
   } catch (err) {
     return serverError(res, err.message);
@@ -284,6 +317,7 @@ const toggleSchedule = async (req, res) => {
       updated_at: now,
     });
     const updated = await ref.get();
+    broadcastScheduleChange().catch(() => {});
     return ok(res, { id: updated.id, ...updated.data() });
   } catch (err) {
     return serverError(res, err.message);

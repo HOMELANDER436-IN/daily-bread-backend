@@ -3,6 +3,142 @@
 const { admin } = require('../config/firebase');
 const logger = require('../config/logger');
 
+const PRAYER_CHANNEL_ID = 'daily_bread_prayer';
+
+/**
+ * Prayer notifications are an EXPIRING real-time event, not a queued message.
+ *
+ * Android : ttl = 0 ms  -> FCM must deliver immediately or discard. Never queued.
+ * Web Push: TTL = 0     -> same semantics.
+ * APNs    : apns-expiration = 0 -> deliver once, do not store.
+ *
+ * Android prayer messages are DATA-ONLY (no top-level `notification` block).
+ * With a `notification` block, Android shows the message itself while the app is in the
+ * background and bypasses the app's FirebaseMessagingService, so the app's channel,
+ * expiry and de-duplication logic never runs. A data message always reaches
+ * MyFirebaseMessagingService.onMessageReceived, which posts the notification on the
+ * stable `daily_bread_prayer` channel (church_bell sound, fixed title/body).
+ */
+const buildPrayerMessage = (token, title, body, dataStrings) => ({
+  token,
+  data: dataStrings,
+  android: {
+    priority: 'high',
+    ttl: 0,
+    collapseKey: PRAYER_CHANNEL_ID,
+  },
+  webpush: {
+    headers: {
+      Urgency: 'high',
+      TTL: '0',
+    },
+    notification: {
+      title,
+      body,
+      icon: '/assets/icon-192.png',
+      badge: '/assets/badge-72.png',
+      sound: '/assets/church_bell.mp3',
+      tag: PRAYER_CHANNEL_ID,
+    },
+    fcmOptions: { link: '/' },
+  },
+  apns: {
+    headers: {
+      'apns-priority': '10',
+      'apns-expiration': '0',
+      'apns-collapse-id': PRAYER_CHANNEL_ID,
+    },
+    payload: {
+      aps: {
+        alert: { title, body },
+        sound: 'church_bell.mp3',
+      },
+    },
+  },
+});
+
+/**
+ * Non-prayer messages keep the original notification-style payload.
+ */
+const buildGenericMessage = (token, title, body, dataStrings) => ({
+  token,
+  notification: { title, body },
+  data: dataStrings,
+  webpush: {
+    headers: { Urgency: 'high' },
+    notification: {
+      title,
+      body,
+      icon: '/assets/icon-192.png',
+      badge: '/assets/badge-72.png',
+      sound: '/assets/church_bell.mp3',
+    },
+    fcmOptions: { link: '/' },
+  },
+  android: {
+    priority: 'high',
+    notification: {
+      channelId: PRAYER_CHANNEL_ID,
+      sound: 'church_bell',
+    },
+  },
+  apns: {
+    payload: {
+      aps: {
+        sound: 'church_bell.mp3',
+      },
+    },
+  },
+});
+
+/**
+ * Silent data-only sync message to notify active devices of schedule changes.
+ * No visual notification banner is displayed.
+ */
+const buildSyncMessage = (token, dataStrings) => ({
+  token,
+  data: dataStrings,
+  android: {
+    priority: 'high',
+    ttl: 300,
+  },
+  webpush: {
+    headers: {
+      Urgency: 'high',
+      TTL: '300',
+    },
+  },
+  apns: {
+    headers: {
+      'apns-priority': '5',
+      'apns-push-type': 'background',
+    },
+    payload: {
+      aps: {
+        'content-available': 1,
+      },
+    },
+  },
+});
+
+const toDataStrings = (data = {}) =>
+  Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]));
+
+const buildMessage = (token, title, body, data = {}) => {
+  const dataStrings = toDataStrings(data);
+  if (dataStrings.type === 'prayer') {
+    return buildPrayerMessage(token, title, body, dataStrings);
+  }
+  if (
+    dataStrings.type === 'schedules_changed' ||
+    dataStrings.type === 'sync' ||
+    dataStrings.type === 'schedule_update'
+  ) {
+    return buildSyncMessage(token, dataStrings);
+  }
+  return buildGenericMessage(token, title, body, dataStrings);
+};
+
 /**
  * Send a push notification to a single FCM token.
  */
@@ -13,48 +149,7 @@ const sendToToken = async (token, title, body, data = {}) => {
   }
 
   try {
-    const message = {
-      token,
-      notification: { title, body },
-      data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
-      webpush: {
-        headers: {
-          Urgency: 'high',
-          TTL: '120',
-        },
-        notification: {
-          title,
-          body,
-          icon: '/assets/icon-192.png',
-          badge: '/assets/badge-72.png',
-          sound: '/assets/church_bell.mp3',
-          tag: 'daily_bread_prayer',
-        },
-        fcmOptions: { link: '/' },
-      },
-      android: {
-        priority: 'high',
-        ttl: 120 * 1000,
-        collapseKey: 'daily_bread_prayer',
-        notification: {
-          channelId: 'daily_bread_prayer',
-          sound: 'church_bell',
-        },
-      },
-      apns: {
-        headers: {
-          'apns-expiration': String(Math.floor(Date.now() / 1000) + 120),
-          'apns-collapse-id': 'daily_bread_prayer',
-        },
-        payload: {
-          aps: {
-            sound: 'church_bell.mp3',
-          },
-        },
-      },
-    };
-
-    const response = await admin.messaging().send(message);
+    const response = await admin.messaging().send(buildMessage(token, title, body, data));
     return { success: true, messageId: response };
   } catch (err) {
     logger.error(`FCM sendToToken error: ${err.message}`);
@@ -73,55 +168,12 @@ const sendBulk = async (tokens, title, body, data = {}) => {
     return [];
   }
 
-  const dataStrings = Object.fromEntries(
-    Object.entries(data).map(([k, v]) => [k, String(v)])
-  );
-
   const results = [];
   const BATCH_SIZE = 500;
 
   for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
     const batch = tokens.slice(i, i + BATCH_SIZE);
-    const messages = batch.map(token => ({
-      token,
-      notification: { title, body },
-      data: dataStrings,
-      webpush: {
-        headers: {
-          Urgency: 'high',
-          TTL: '120',
-        },
-        notification: {
-          title,
-          body,
-          icon: '/assets/icon-192.png',
-          badge: '/assets/badge-72.png',
-          sound: '/assets/church_bell.mp3',
-          tag: 'daily_bread_prayer',
-        },
-        fcmOptions: { link: '/' },
-      },
-      android: {
-        priority: 'high',
-        ttl: 120 * 1000,
-        collapseKey: 'daily_bread_prayer',
-        notification: {
-          channelId: 'daily_bread_prayer',
-          sound: 'church_bell',
-        },
-      },
-      apns: {
-        headers: {
-          'apns-expiration': String(Math.floor(Date.now() / 1000) + 120),
-          'apns-collapse-id': 'daily_bread_prayer',
-        },
-        payload: {
-          aps: {
-            sound: 'church_bell.mp3',
-          },
-        },
-      },
-    }));
+    const messages = batch.map(token => buildMessage(token, title, body, data));
 
     try {
       const batchResponse = await admin.messaging().sendEach(messages);
@@ -168,4 +220,4 @@ const sendBulk = async (tokens, title, body, data = {}) => {
   return results;
 };
 
-module.exports = { sendToToken, sendBulk };
+module.exports = { sendToToken, sendBulk, buildMessage };
