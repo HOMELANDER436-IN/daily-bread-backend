@@ -12,20 +12,33 @@ const PRAYER_CHANNEL_ID = 'daily_bread_prayer';
  * Web Push: TTL = 0     -> same semantics.
  * APNs    : apns-expiration = 0 -> deliver once, do not store.
  *
- * Android prayer messages are DATA-ONLY (no top-level `notification` block).
- * With a `notification` block, Android shows the message itself while the app is in the
- * background and bypasses the app's FirebaseMessagingService, so the app's channel,
- * expiry and de-duplication logic never runs. A data message always reaches
- * MyFirebaseMessagingService.onMessageReceived, which posts the notification on the
- * stable `daily_bread_prayer` channel (church_bell sound, fixed title/body).
+ * Top-level `notification` + `android.notification`:
+ * Ensures the Android system tray reliably shows the notification and plays the
+ * bundled `res/raw/church_bell.mp3` sound on the `daily_bread_prayer` channel even
+ * when the app is in the background or killed.
+ * In the foreground, MyFirebaseMessagingService.onMessageReceived displays the
+ * in-app notification with church bell audio and prayer banner.
  */
 const buildPrayerMessage = (token, title, body, dataStrings) => ({
   token,
-  data: dataStrings,
+  notification: { title, body },
+  data: {
+    ...(title ? { title: String(title) } : {}),
+    ...(body ? { body: String(body) } : {}),
+    ...dataStrings,
+  },
   android: {
     priority: 'high',
     ttl: 0,
     collapseKey: PRAYER_CHANNEL_ID,
+    notification: {
+      channelId: PRAYER_CHANNEL_ID,
+      sound: 'church_bell',
+      defaultSound: false,
+      priority: 'max',
+      visibility: 'public',
+      notificationPriority: 'PRIORITY_MAX',
+    },
   },
   webpush: {
     headers: {

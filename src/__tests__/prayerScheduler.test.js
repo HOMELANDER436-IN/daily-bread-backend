@@ -242,11 +242,13 @@ describe('FCM message lifespan (prayer)', () => {
   const msg = buildMessage('tok', 'Daily Bread', 'It is prayer time. Take a moment to pray.', {
     type: 'prayer', event_id: 's1_2026-10-04', schedule_id: 's1',
   });
-  test('Android: TTL 0, high priority, data-only (no display notification block)', () => {
+  test('Android: TTL 0, high priority, church_bell sound and daily_bread_prayer channel', () => {
     expect(msg.android.ttl).toBe(0);
     expect(msg.android.priority).toBe('high');
-    expect(msg.notification).toBeUndefined();
-    expect(msg.android.notification).toBeUndefined();
+    expect(msg.notification.title).toBe('Daily Bread');
+    expect(msg.notification.body).toBe('It is prayer time. Take a moment to pray.');
+    expect(msg.android.notification.channelId).toBe('daily_bread_prayer');
+    expect(msg.android.notification.sound).toBe('church_bell');
     expect(msg.data.type).toBe('prayer');
   });
   test('Web Push and APNs also expire immediately', () => {
